@@ -18,8 +18,8 @@ const initialStorage = loadSessionResult()
 
 function App() {
   const [session, setSession] = useState<Session | null>(() => initialStorage.session)
-  const [advancedCount, setAdvancedCount] = useState('6')
-  const [beginnerCount, setBeginnerCount] = useState('4')
+  const [advancedCount, setAdvancedCount] = useState('4')
+  const [beginnerCount, setBeginnerCount] = useState('5')
   const [addCategory, setAddCategory] = useState<Category>('advanced')
   const [addCount, setAddCount] = useState('1')
   const [preview, setPreview] = useState<{ nextSession: Session; diff: PlanDiff } | null>(null)
