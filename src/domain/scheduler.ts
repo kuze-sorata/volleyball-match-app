@@ -103,6 +103,15 @@ function seededNoise(seed: string, roundIndex: number, a: string, b: string): nu
   return (hash >>> 0) / 4294967296
 }
 
+function openingPairPreference(roundIndex: number, teamA: Team, teamB: Team): number {
+  if (roundIndex !== 1) return 0
+  const preferredPair = teamA.category === 'advanced'
+    ? new Set(['1', '2'])
+    : new Set(['A', 'B'])
+  const isPreferredPair = preferredPair.has(teamA.displayName) && preferredPair.has(teamB.displayName)
+  return isPreferredPair ? -1000 : 0
+}
+
 function pairScore(
   state: WorkingState,
   roundIndex: number,
@@ -116,7 +125,8 @@ function pairScore(
   const consecutivePenalty = (a.lastPlayedRound === roundIndex - 1 ? 12 : 0) + (b.lastPlayedRound === roundIndex - 1 ? 12 : 0)
   const loadPenalty = (a.scheduled + b.scheduled) * 7
   const imbalancePenalty = Math.abs(a.scheduled - b.scheduled) * 2
-  return repeatCount * 80 + consecutivePenalty + loadPenalty + imbalancePenalty + seededNoise(seed, roundIndex, teamA.id, teamB.id)
+  const openingPreference = openingPairPreference(roundIndex, teamA, teamB)
+  return openingPreference + repeatCount * 80 + consecutivePenalty + loadPenalty + imbalancePenalty + seededNoise(seed, roundIndex, teamA.id, teamB.id)
 }
 
 function choosePair(
