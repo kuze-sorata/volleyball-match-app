@@ -6,7 +6,6 @@ import {
   getTeamById,
   getTeamStats,
   openingRoundDraft,
-  numberToLetters,
   recalculateFromOpeningRound,
   recalculateSessionPlan,
   undoLastCompletedRound,
@@ -19,21 +18,13 @@ import logoImage from './assets/jmv-logo.png'
 const DEFAULT_SEED = '20261011'
 const initialStorage = loadSessionResult()
 
-interface TeamDraft {
-  key: number
-  category: Category
-  playerCount: string
-  representativeName: string
-}
-
 function App() {
   const [session, setSession] = useState<Session | null>(() => initialStorage.session)
-  const [draftTeams, setDraftTeams] = useState<TeamDraft[]>([])
+  const [advancedCount, setAdvancedCount] = useState('4')
+  const [beginnerCount, setBeginnerCount] = useState('5')
   const [attendanceCounts, setAttendanceCounts] = useState<Record<Category, string>>({ advanced: '0', beginner: '0' })
-  const [nextDraftKey, setNextDraftKey] = useState(1)
   const [addCategory, setAddCategory] = useState<Category>('advanced')
-  const [addPlayerCount, setAddPlayerCount] = useState('6')
-  const [addRepresentativeName, setAddRepresentativeName] = useState('')
+  const [addCount, setAddCount] = useState('1')
   const [preview, setPreview] = useState<{ nextSession: Session; diff: PlanDiff; reason: '途中参加' | '第1ラウンド調整' } | null>(null)
   const [notice, setNotice] = useState<{ type: 'success' | 'warning'; text: string } | null>(() => initialStorage.warning ? { type: 'warning', text: initialStorage.warning } : null)
 
@@ -50,29 +41,17 @@ function App() {
   }
 
   const handleGenerate = () => {
+    const advanced = parseCount(advancedCount)
+    const beginner = parseCount(beginnerCount)
     const advancedAttendees = parseCount(attendanceCounts.advanced)
     const beginnerAttendees = parseCount(attendanceCounts.beginner)
-    const playerCounts = draftTeams.map((team) => parseCount(team.playerCount))
-    if (advancedAttendees === null || beginnerAttendees === null || playerCounts.some((count) => count === null)) {
-      flash('受付人数とチーム人数は0以上の整数で入力してください。', 'warning')
+    if (advanced === null || beginner === null || advancedAttendees === null || beginnerAttendees === null) {
+      flash('受付人数とチーム数は0以上の整数で入力してください。', 'warning')
       return
     }
-    const advanced = draftTeams.filter((team) => team.category === 'advanced')
-    const beginner = draftTeams.filter((team) => team.category === 'beginner')
-    const created = createInitialSession(advanced.length, beginner.length, DEFAULT_SEED)
-    let advancedIndex = 0
-    let beginnerIndex = 0
-    const teams = created.teams.map((team) => {
-      const draft = team.category === 'advanced' ? advanced[advancedIndex++] : beginner[beginnerIndex++]
-      return {
-        ...team,
-        playerCount: Number(draft.playerCount),
-        representativeName: draft.representativeName.trim(),
-      }
-    })
+    const created = createInitialSession(advanced, beginner, DEFAULT_SEED)
     setSession({
       ...created,
-      teams,
       attendanceCounts: { advanced: advancedAttendees, beginner: beginnerAttendees },
     })
     setPreview(null)
@@ -94,35 +73,14 @@ function App() {
 
   const handlePreview = () => {
     if (!session) return
-    const playerCount = parseCount(addPlayerCount)
-    if (playerCount === null) {
-      flash('追加するチームの人数は0以上の整数で入力してください。', 'warning')
+    const count = parseCount(addCount)
+    if (count === null) {
+      flash('追加するチーム数は0以上の整数で入力してください。', 'warning')
       return
     }
-    const result = recalculateSessionPlan(session, addCategory, 1)
-    const addedTeam = result.session.teams[result.session.teams.length - 1]
-    if (addedTeam) {
-      addedTeam.playerCount = playerCount
-      addedTeam.representativeName = addRepresentativeName.trim()
-    }
+    const result = recalculateSessionPlan(session, count === 0 ? null : addCategory, count)
     setPreview({ nextSession: result.session, diff: result.diff, reason: '途中参加' })
-  }
-
-  const updateTeamDetails = (teamId: string, field: 'playerCount' | 'representativeName', value: string) => {
-    if (!session) return
-    setSession({
-      ...session,
-      teams: session.teams.map((team) => {
-        if (team.id !== teamId) return team
-        if (field === 'playerCount') {
-          const count = parseCount(value)
-          return { ...team, playerCount: count === null ? undefined : count }
-        }
-        return { ...team, representativeName: value }
-      }),
-      updatedAt: new Date().toISOString(),
-    })
-    setPreview(null)
+    if (result.diff.changes.length === 0 && count === 0) flash('変更はありません。', 'warning')
   }
 
   const updateAttendanceCount = (category: Category, value: string) => {
@@ -138,11 +96,6 @@ function App() {
     setPreview(null)
   }
 
-  const addDraftTeam = (category: Category) => {
-    setDraftTeams((teams) => [...teams, { key: nextDraftKey, category, playerCount: '6', representativeName: '' }])
-    setNextDraftKey((key) => key + 1)
-  }
-
   const handleOpeningPreview = (draft: OpeningRoundDraft) => {
     if (!session) return
     try {
@@ -155,10 +108,6 @@ function App() {
 
   const handleApplyPreview = () => {
     if (!preview) return
-    if (preview.reason === '途中参加') {
-      setAddPlayerCount('6')
-      setAddRepresentativeName('')
-    }
     setSession({
       ...preview.nextSession,
       revisions: [...preview.nextSession.revisions, {
@@ -201,12 +150,13 @@ function App() {
       {!session ? (
         <main className="empty-state">
           <SetupPanel
-            teams={draftTeams}
+            teamCounts={{ advanced: advancedCount, beginner: beginnerCount }}
+            setTeamCounts={(counts) => {
+              setAdvancedCount(counts.advanced)
+              setBeginnerCount(counts.beginner)
+            }}
             attendanceCounts={attendanceCounts}
             setAttendanceCounts={setAttendanceCounts}
-            onAddTeam={addDraftTeam}
-            onRemoveTeam={(key) => setDraftTeams((teams) => teams.filter((team) => team.key !== key))}
-            onTeamChange={(key, field, value) => setDraftTeams((teams) => teams.map((team) => team.key === key ? { ...team, [field]: value } : team))}
             onGenerate={handleGenerate}
           />
         </main>
@@ -215,10 +165,9 @@ function App() {
           <div className="main-grid">
             <div className="schedule-column">
               <TeamRoster
-                teams={session.teams}
+                session={session}
                 attendanceCounts={session.attendanceCounts}
                 onAttendanceChange={updateAttendanceCount}
-                onTeamChange={updateTeamDetails}
               />
               <ScheduleBoard session={session} />
               <TeamSummary stats={stats} />
@@ -232,16 +181,13 @@ function App() {
               <ProgressPanel session={session} currentRound={currentRound} onComplete={handleComplete} onUndo={handleUndo} />
               <ChangePanel
                 addCategory={addCategory}
+                addCount={addCount}
                 setAddCategory={setAddCategory}
-                addPlayerCount={addPlayerCount}
-                addRepresentativeName={addRepresentativeName}
-                setAddPlayerCount={setAddPlayerCount}
-                setAddRepresentativeName={setAddRepresentativeName}
+                setAddCount={setAddCount}
                 onPreview={handlePreview}
                 onClear={() => {
                   setPreview(null)
-                  setAddPlayerCount('6')
-                  setAddRepresentativeName('')
+                  setAddCount('1')
                 }}
               />
               {preview && <PreviewPanel session={session} preview={preview} onApply={handleApplyPreview} onCancel={() => setPreview(null)} />}
@@ -257,68 +203,30 @@ function App() {
 }
 
 function SetupPanel({
-  teams,
+  teamCounts,
+  setTeamCounts,
   attendanceCounts,
   setAttendanceCounts,
-  onAddTeam,
-  onRemoveTeam,
-  onTeamChange,
   onGenerate,
 }: {
-  teams: TeamDraft[]
+  teamCounts: Record<Category, string>
+  setTeamCounts: (value: Record<Category, string>) => void
   attendanceCounts: Record<Category, string>
   setAttendanceCounts: (value: Record<Category, string>) => void
-  onAddTeam: (category: Category) => void
-  onRemoveTeam: (key: number) => void
-  onTeamChange: (key: number, field: 'playerCount' | 'representativeName', value: string) => void
   onGenerate: () => void
 }) {
-  const teamCountByCategory = {
-    advanced: teams.filter((team) => team.category === 'advanced').length,
-    beginner: teams.filter((team) => team.category === 'beginner').length,
-  }
-  const registeredPeople = {
-    advanced: teams.filter((team) => team.category === 'advanced').reduce((sum, team) => sum + (parseCount(team.playerCount) ?? 0), 0),
-    beginner: teams.filter((team) => team.category === 'beginner').reduce((sum, team) => sum + (parseCount(team.playerCount) ?? 0), 0),
-  }
-
   return <section className="setup-panel panel">
-    <div className="section-heading"><div><h3>受付人数とチーム一覧</h3><p>受付人数を数え、チームごとに代表者と人数を記録します。</p></div></div>
-    <div className="setup-attendance">
-      {(['advanced', 'beginner'] as const).map((category) => <label className={`attendance-input ${category}`} key={category}>
-        <span>{categoryLabelJa(category)}の受付人数</span>
-        <input type="number" min="0" step="1" value={attendanceCounts[category]} onChange={(event) => setAttendanceCounts({ ...attendanceCounts, [category]: event.target.value })} />
-        <small>チーム数の目安：約{estimateTeamCount(attendanceCounts[category])}チーム（6〜7人で編成する場合）</small>
-      </label>)}
-    </div>
-    <p className="microcopy setup-note">人数は参考値です。5:20以降の到着や現場での調整に合わせて変更できます。</p>
+    <div className="section-heading"><div><h3>人数とチーム数</h3><p>受付人数からチーム数の目安を確認し、当日の編成に合わせて調整します。</p></div></div>
     <div className="setup-team-groups">
-      {(['advanced', 'beginner'] as const).map((category) => {
-        const categoryTeams = teams.filter((team) => team.category === category)
-        return <section className="draft-team-group" key={category}>
-          <div className="draft-team-heading">
-            <strong>{categoryLabelJa(category)}</strong>
-            <span>{categoryTeams.length}チーム登録</span>
-          </div>
-          {categoryTeams.length === 0 ? <p className="empty-line">まだチームはありません。</p> : categoryTeams.map((team, index) => <div className="draft-team-row" key={team.key}>
-            <strong className="draft-team-name">{teamLabel(category, index)}</strong>
-            <label><span>人数</span><input aria-label={`${categoryLabelJa(category)}${teamLabel(category, index)}の人数`} type="number" min="0" step="1" value={team.playerCount} onChange={(event) => onTeamChange(team.key, 'playerCount', event.target.value)} /></label>
-            <label className="draft-rep"><span>代表者名</span><input aria-label={`${categoryLabelJa(category)}${teamLabel(category, index)}の代表者名`} type="text" value={team.representativeName} onChange={(event) => onTeamChange(team.key, 'representativeName', event.target.value)} /></label>
-            <button className="remove-team-button" type="button" aria-label={`${teamLabel(category, index)}を削除`} onClick={() => onRemoveTeam(team.key)}>削除</button>
-          </div>)}
-          <button className="add-team-button" type="button" onClick={() => onAddTeam(category)}>＋ {categoryLabelJa(category)}チームを追加</button>
-        </section>
-      })}
+      {(['advanced', 'beginner'] as const).map((category) => <section className="draft-team-group" key={category}>
+        <div className="draft-team-heading"><strong>{categoryLabelJa(category)}</strong></div>
+        <label className="number-field"><span>受付人数</span><input type="number" min="0" step="1" value={attendanceCounts[category]} onChange={(event) => setAttendanceCounts({ ...attendanceCounts, [category]: event.target.value })} /></label>
+        <p className="team-count-estimate">6〜7人編成の目安：約{estimateTeamCount(attendanceCounts[category])}チーム</p>
+        <label className="number-field"><span>作るチーム数</span><input type="number" min="0" step="1" value={teamCounts[category]} onChange={(event) => setTeamCounts({ ...teamCounts, [category]: event.target.value })} /></label>
+      </section>)}
     </div>
-    <div className="setup-total">
-      <div><span>対戦表に登録するチーム</span><strong>アドバンス {teamCountByCategory.advanced} ／ ビギナー {teamCountByCategory.beginner}</strong></div>
-      {(['advanced', 'beginner'] as const).map((category) => {
-        const checkedIn = parseCount(attendanceCounts[category]) ?? 0
-        const difference = checkedIn - registeredPeople[category]
-        return <span className="setup-reconciliation" key={category}>{categoryLabelJa(category)}：受付 {checkedIn}人 ／ チーム登録 {registeredPeople[category]}人 ／ 差 {difference > 0 ? '+' : ''}{difference}人</span>
-      })}
-    </div>
-    <button className="primary-button" type="button" onClick={onGenerate}>チーム一覧から対戦表を作成 <span>→</span></button>
+    <p className="microcopy setup-note">人数やチーム数は、5:20以降の到着や現場の調整に合わせて変更できます。</p>
+    <button className="primary-button" type="button" onClick={onGenerate}>対戦表を生成 <span>→</span></button>
   </section>
 }
 
@@ -331,46 +239,33 @@ function estimateTeamCount(value: string): string {
   return `${Math.max(1, Math.round(count / 6.5))}前後`
 }
 
-function teamLabel(category: Category, index: number): string {
-  return category === 'advanced' ? String(index + 1) : numberToLetters(index)
-}
-
 function TeamRoster({
-  teams,
+  session,
   attendanceCounts,
   onAttendanceChange,
-  onTeamChange,
 }: {
-  teams: Session['teams']
+  session: Session
   attendanceCounts: Session['attendanceCounts']
   onAttendanceChange: (category: Category, value: string) => void
-  onTeamChange: (teamId: string, field: 'playerCount' | 'representativeName', value: string) => void
 }) {
   return <section className="panel roster-panel">
-    <div className="section-heading"><div><h3>チーム一覧</h3><p>チーム人数は6〜7人が目安です。人数に合わせて調整できます。</p></div></div>
+    <div className="section-heading"><div><h3>参加人数とチーム数</h3><p>受付人数は必要に応じて更新できます。</p></div></div>
     <div className="roster-groups">
       {(['advanced', 'beginner'] as const).map((category) => {
-        const categoryTeams = teams.filter((team) => team.category === category && team.active)
-        const hasTeamCounts = categoryTeams.every((team) => team.playerCount !== undefined)
-        const registeredCount = hasTeamCounts ? categoryTeams.reduce((sum, team) => sum + (team.playerCount ?? 0), 0) : undefined
+        const categoryTeams = session.teams.filter((team) => team.category === category && team.active)
         const checkedInCount = attendanceCounts?.[category]
-        const difference = checkedInCount !== undefined && registeredCount !== undefined ? checkedInCount - registeredCount : null
         return <section className="roster-group" key={category}>
           <div className="roster-group-heading">
             <strong><i className={category === 'advanced' ? 'advance-dot' : 'beginner-dot'} />{categoryLabelJa(category)}</strong>
-            <span>受付 {checkedInCount === undefined ? '未記録' : `${checkedInCount}人`} / チーム登録 {registeredCount === undefined ? '未記録' : `${registeredCount}人`}{checkedInCount === undefined ? '' : ` / 目安 ${estimateTeamCount(String(checkedInCount))}チーム`}</span>
+            <span>{categoryTeams.length}チーム</span>
           </div>
-          {difference !== null && difference !== 0 && <p className="roster-difference">人数差 {difference > 0 ? '+' : ''}{difference}人（確認用）</p>}
-          {categoryTeams.length === 0 ? <p className="empty-line roster-empty">チームが登録されていません。</p> : categoryTeams.map((team) => <div className="roster-row" key={team.id}>
-            <strong className="roster-label">{team.displayName}</strong>
-            <label className="roster-count"><span>人数</span><input aria-label={`${categoryLabelJa(category)}${team.displayName}の人数`} type="number" min="0" step="1" value={team.playerCount ?? ''} onChange={(event) => onTeamChange(team.id, 'playerCount', event.target.value)} /></label>
-            <label className="roster-representative"><span>代表者</span><input aria-label={`${categoryLabelJa(category)}${team.displayName}の代表者名`} type="text" value={team.representativeName ?? ''} onChange={(event) => onTeamChange(team.id, 'representativeName', event.target.value)} placeholder="未入力" /></label>
-          </div>)}
-          <label className="attendance-adjust"><span>受付人数</span><input type="number" min="0" step="1" value={checkedInCount ?? ''} onChange={(event) => onAttendanceChange(category, event.target.value)} /></label>
+          <div className="roster-count-summary">
+            <label><span>受付人数</span><input type="number" min="0" step="1" value={checkedInCount ?? ''} onChange={(event) => onAttendanceChange(category, event.target.value)} /></label>
+            {checkedInCount !== undefined && <span>チーム数の目安：約{estimateTeamCount(String(checkedInCount))}</span>}
+          </div>
         </section>
       })}
     </div>
-    <p className="microcopy">受付人数との差は確認の目安です。差があっても対戦表の操作は続けられます。</p>
   </section>
 }
 
@@ -462,44 +357,34 @@ function ProgressPanel({ session, currentRound, onComplete, onUndo }: { session:
 
 function ChangePanel({
   addCategory,
+  addCount,
   setAddCategory,
-  addPlayerCount,
-  addRepresentativeName,
-  setAddPlayerCount,
-  setAddRepresentativeName,
+  setAddCount,
   onPreview,
   onClear,
 }: {
   addCategory: Category
+  addCount: string
   setAddCategory: (value: Category) => void
-  addPlayerCount: string
-  addRepresentativeName: string
-  setAddPlayerCount: (value: string) => void
-  setAddRepresentativeName: (value: string) => void
+  setAddCount: (value: string) => void
   onPreview: () => void
   onClear: () => void
 }) {
   return <section className="panel change-panel">
-    <div className="section-heading"><div><h3>途中参加のチーム</h3><p>新しいチームを1つずつ登録し、未開始分の対戦表を更新します。</p></div></div>
-    <div className="change-block"><label className="field-label" htmlFor="late-team-category">区分</label><div className="inline-fields"><select id="late-team-category" value={addCategory} onChange={(event) => setAddCategory(event.target.value as Category)}><option value="advanced">アドバンス</option><option value="beginner">ビギナー</option></select></div></div>
-    <div className="late-team-fields">
-      <label><span>人数</span><input type="number" min="0" step="1" value={addPlayerCount} onChange={(event) => setAddPlayerCount(event.target.value)} /></label>
-      <label><span>代表者名</span><input type="text" value={addRepresentativeName} onChange={(event) => setAddRepresentativeName(event.target.value)} /></label>
-    </div>
+    <div className="section-heading"><div><h3>変更</h3></div></div>
+    <div className="change-block"><p className="field-label">チームを追加</p><div className="inline-fields"><select value={addCategory} onChange={(event) => setAddCategory(event.target.value as Category)}><option value="advanced">アドバンス</option><option value="beginner">ビギナー</option></select><input type="number" min="0" value={addCount} onChange={(event) => setAddCount(event.target.value)} /><span>チーム</span></div></div>
     <div className="change-actions"><button className="primary-button" type="button" onClick={onPreview}>差分をプレビュー <span>→</span></button><button className="text-button" type="button" onClick={onClear}>入力をクリア</button></div>
   </section>
 }
 
 function PreviewPanel({ session, preview, onApply, onCancel }: { session: Session; preview: { nextSession: Session; diff: PlanDiff; reason: '途中参加' | '第1ラウンド調整' }; onApply: () => void; onCancel: () => void }) {
   const isOpeningAdjustment = preview.reason === '第1ラウンド調整'
-  const addedTeams = preview.nextSession.teams.filter((team) => !session.teams.some((existing) => existing.id === team.id))
   return <section className="panel preview-panel">
     <div className="section-heading"><div><h3>{isOpeningAdjustment ? '第1ラウンド調整の確認' : '差分プレビュー'}</h3><p>{isOpeningAdjustment ? `第1ラウンドを固定します。第2〜9ラウンドは${preview.diff.changedRounds.length}ラウンド・${preview.diff.changes.length}コートを変更` : `${preview.diff.changedRounds.length}ラウンド・${preview.diff.changes.length}コートが変更`}</p></div></div>
     {isOpeningAdjustment && <div className="opening-summary"><strong>固定する第1ラウンド</strong>{([1, 2, 3] as const).map((court) => {
       const match = preview.nextSession.rounds[0]?.matches.find((candidate) => candidate.court === court) ?? null
       return <div key={court}><span>コート{court}</span><b>{shortMatch(match, preview.nextSession)}</b></div>
     })}</div>}
-    {addedTeams.length > 0 && <div className="opening-summary"><strong>追加するチーム</strong>{addedTeams.map((team) => <div key={team.id}><span>{categoryLabelJa(team.category)} {team.displayName}（{team.playerCount ?? 0}人）</span><b>{team.representativeName || '代表者未入力'}</b></div>)}</div>}
     <div className="preview-list">{preview.diff.changes.length === 0 ? <p className="empty-line">対戦カードの変更はありません。</p> : preview.diff.changes.slice(0, 8).map((change) => <div className="preview-row" key={`${change.roundIndex}-${change.court}`}><span>第{change.roundIndex}R / C{change.court}</span><strong>{shortMatch(change.before, session)} <b>→</b> {shortMatch(change.after, preview.nextSession)}</strong></div>)}{preview.diff.changes.length > 8 && <p className="microcopy">ほか {preview.diff.changes.length - 8} 件。全9ラウンド表に反映されます。</p>}</div>
     <div className="preview-actions"><button className="primary-button" type="button" onClick={onApply}>この変更を確定 <span>→</span></button><button className="secondary-button" type="button" onClick={onCancel}>キャンセル</button></div>
   </section>

@@ -9,8 +9,6 @@ export interface Team {
   id: string
   category: Category
   displayName: string
-  playerCount?: number
-  representativeName?: string
   joinedRound: number
   active: boolean
 }

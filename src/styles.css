@@ -45,7 +45,7 @@ h1 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: .04em; }
 .notice.warning { border-color: rgba(185,109,61,.65); }
 
 .empty-state { width: min(1060px, calc(100% - 40px)); min-height: calc(100vh - 120px); margin: 0 auto; display: grid; place-items: center; }
-.empty-state .setup-panel { width: min(760px, 100%); }
+.empty-state .setup-panel { width: min(520px, 100%); }
 .empty-copy h2, .hero-row h2 { margin-bottom: 18px; font-size: clamp(34px, 4.5vw, 62px); line-height: 1.08; letter-spacing: -.055em; font-weight: 700; }
 .empty-copy > p:last-child { width: min(420px, 100%); color: var(--muted); font-size: 13px; line-height: 1.9; }
 .panel { background: var(--panel); border: 1px solid var(--line); }
@@ -55,32 +55,13 @@ h1 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: .04em; }
 .section-heading h3 { margin-bottom: 3px; font-size: 15px; letter-spacing: .02em; }
 .section-heading p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 28px 0 22px; }
-.setup-attendance { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
-.attendance-input { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; align-items: center; padding: 13px; border: 1px solid var(--line); background: var(--navy-2); }
-.attendance-input > span { color: var(--muted); font-size: 11px; }
-.attendance-input input { width: 70px; border: 0; outline: 0; color: var(--ink); background: transparent; text-align: right; font: 600 24px 'Noto Sans JP', sans-serif; font-variant-numeric: tabular-nums; }
-.attendance-input small { grid-column: 1 / -1; color: var(--muted-dark); font-size: 9px; line-height: 1.5; }
 .setup-note { margin: 9px 0 0; }
 .setup-team-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 22px; }
 .draft-team-group { min-width: 0; padding-top: 12px; border-top: 1px solid var(--line); }
 .draft-team-heading { margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .draft-team-heading strong { font-size: 12px; }
 .draft-team-heading > span { color: var(--muted); font-size: 10px; }
-.draft-team-group > .empty-line { padding: 10px 0; }
-.draft-team-row { display: grid; grid-template-columns: 28px 66px minmax(0, 1fr) 34px; gap: 7px; align-items: end; padding: 8px 0; border-top: 1px solid var(--line-soft); }
-.draft-team-name { padding-bottom: 8px; font-size: 14px; }
-.draft-team-row label, .late-team-fields label { min-width: 0; display: grid; gap: 4px; }
-.draft-team-row label > span, .late-team-fields label > span { color: var(--muted); font-size: 9px; }
-.draft-team-row input, .late-team-fields input { width: 100%; min-width: 0; height: 35px; padding: 6px 8px; border: 1px solid var(--line); outline: 0; color: var(--ink); background: var(--panel); border-radius: 0; font-size: 12px; }
-.draft-team-row input:focus, .late-team-fields input:focus { border-color: var(--lime); }
-.remove-team-button { height: 34px; border: 0; color: var(--muted); background: transparent; font-size: 9px; }
-.remove-team-button:hover { color: var(--orange); }
-.add-team-button { width: 100%; min-height: 38px; margin-top: 8px; border: 1px solid var(--line); color: var(--ink); background: transparent; font-size: 10px; }
-.add-team-button:hover { border-color: var(--lime); color: var(--lime); }
-.setup-total { margin-top: 22px; padding: 14px 0; border-top: 1px solid var(--line-soft); display: grid; grid-template-columns: 1fr auto; justify-content: space-between; gap: 8px 12px; color: var(--muted); font-size: 11px; }
-.setup-total > div { display: flex; justify-content: space-between; gap: 12px; }
-.setup-total strong { color: var(--ink); font-weight: 600; }
-.setup-reconciliation { color: var(--muted); font-size: 10px; text-align: right; }
+.team-count-estimate { margin: 4px 0 12px; color: var(--muted); font-size: 10px; }
 .number-field { display: block; padding: 11px 12px 13px; border: 1px solid var(--line); background: var(--navy-2); }
 .number-field span, .field-label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 11px; }
 .number-field input { width: 100%; border: 0; outline: 0; color: var(--ink); background: transparent; font: 600 28px 'Noto Sans JP', sans-serif; font-variant-numeric: tabular-nums; }
@@ -144,17 +125,11 @@ select { appearance: auto; }
 .roster-group-heading { min-height: 34px; padding-bottom: 8px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .roster-group-heading > strong { display: flex; align-items: center; gap: 7px; font-size: 12px; white-space: nowrap; }
 .roster-group-heading > span { color: var(--muted); font-size: 9px; text-align: right; }
-.roster-row { display: grid; grid-template-columns: 30px 68px minmax(0, 1fr); gap: 8px; align-items: end; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
-.roster-label { padding-bottom: 8px; font-size: 14px; }
-.roster-row label { min-width: 0; display: grid; gap: 4px; }
-.roster-row label > span { color: var(--muted); font-size: 9px; }
-.roster-row input, .attendance-adjust input { width: 100%; min-width: 0; height: 34px; padding: 6px 8px; border: 1px solid var(--line); outline: 0; color: var(--ink); background: var(--panel); border-radius: 0; font-size: 12px; }
-.roster-row input:focus, .attendance-adjust input:focus { border-color: var(--lime); }
-.roster-difference { margin: 8px 0 0; color: var(--orange); font-size: 10px; }
-.roster-empty { padding: 10px 0; }
-.attendance-adjust { margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 10px; }
-.attendance-adjust input { width: 74px; text-align: right; }
-.roster-panel > .microcopy { margin-top: 14px; }
+.roster-count-summary { margin-top: 12px; display: flex; align-items: end; justify-content: space-between; gap: 10px; }
+.roster-count-summary label { display: grid; gap: 4px; color: var(--muted); font-size: 9px; }
+.roster-count-summary input { width: 84px; height: 36px; padding: 6px 8px; border: 1px solid var(--line); outline: 0; color: var(--ink); background: var(--panel); border-radius: 0; font-size: 14px; }
+.roster-count-summary input:focus { border-color: var(--lime); }
+.roster-count-summary > span { color: var(--muted); font-size: 10px; }
 .current-round { margin: 25px 0 18px; padding: 18px 0; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; }
 .current-round span { color: var(--muted); font-size: 11px; }
 .current-round strong { color: var(--lime); font: 600 29px 'Noto Sans JP', sans-serif; font-variant-numeric: tabular-nums; }
@@ -177,7 +152,6 @@ select { appearance: auto; }
 .inline-fields select:first-child { flex: 1; }
 .inline-fields input { width: 57px; font-family: 'Noto Sans JP', sans-serif; font-variant-numeric: tabular-nums; }
 .inline-fields span { color: var(--muted); font-size: 10px; white-space: nowrap; }
-.late-team-fields { display: grid; grid-template-columns: 75px minmax(0, 1fr); gap: 9px; margin-top: 12px; }
 .add-button { height: 38px; padding: 0 11px; border: 1px solid var(--line); color: var(--ink); background: transparent; font-size: 11px; }
 .add-button:hover { border-color: var(--lime); color: var(--lime); }
 .pending-list { margin-top: 19px; padding-top: 12px; border-top: 1px solid var(--line-soft); display: flex; flex-wrap: wrap; gap: 6px; }
@@ -273,9 +247,6 @@ select { appearance: auto; }
   .stats-row { min-height: 28px; font-size: 12px; }
   .progress-panel, .change-panel, .preview-panel, .team-panel, .opening-panel, .roster-panel { padding: 18px 16px; }
   .setup-attendance, .setup-team-groups, .roster-groups { grid-template-columns: 1fr; }
-  .draft-team-row { grid-template-columns: 28px 58px minmax(0, 1fr) 34px; gap: 5px; }
-  .setup-total { display: grid; grid-template-columns: 1fr; gap: 5px; }
-  .setup-reconciliation { text-align: left; }
   .roster-group-heading { align-items: flex-start; }
   .roster-group-heading > span { max-width: 65%; }
   .primary-button, .secondary-button { min-height: 46px; }
