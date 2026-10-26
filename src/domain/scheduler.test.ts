@@ -21,13 +21,15 @@ describe('volleyball match scheduler', () => {
     expect(getPlanHealth(session).matchCount).toBeGreaterThan(0)
   })
 
-  it('T01b: prefers the first numbered and lettered pairs in round 1', () => {
+  it('T01b: opens with the first advanced pair and two beginner pairs', () => {
     const session = createInitialSession(6, 4, 'test')
     const firstRound = session.rounds[0]
     const advancedMatch = firstRound.matches.find((match) => match.court === 1)
-    const beginnerMatch = firstRound.matches.find((match) => match.court === 3)
+    const beginnerMatch = firstRound.matches.find((match) => match.court === 2)
+    const secondBeginnerMatch = firstRound.matches.find((match) => match.court === 3)
     expect(advancedMatch && [advancedMatch.teamAId, advancedMatch.teamBId]).toEqual(['advanced-1', 'advanced-2'])
     expect(beginnerMatch && [beginnerMatch.teamAId, beginnerMatch.teamBId]).toEqual(['beginner-a', 'beginner-b'])
+    expect(secondBeginnerMatch && [secondBeginnerMatch.teamAId, secondBeginnerMatch.teamBId]).toEqual(['beginner-c', 'beginner-d'])
   })
 
   it('T02: never mixes categories or repeats a team in one round', () => {
