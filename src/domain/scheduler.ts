@@ -9,7 +9,7 @@ import {
   TOTAL_ROUNDS,
 } from './types'
 
-export const ALGORITHM_VERSION = '公平性優先 v3'
+export const ALGORITHM_VERSION = '公平性優先 v4'
 
 interface WorkingTeam {
   scheduled: number
@@ -21,10 +21,16 @@ interface WorkingTeam {
 type WorkingState = Map<string, WorkingTeam>
 
 interface ScheduleScore {
+  categoryGap: number
   fairness: number
   repeats: number
   consecutive: number
   noise: number
+}
+
+interface FairnessMetrics {
+  categoryGap: number
+  withinCategory: number
 }
 
 interface RoundCandidate {
@@ -128,33 +134,44 @@ function pairScore(
   const b = state.get(teamB.id)!
   const repeatCount = a.opponents.get(teamB.id) ?? 0
   const consecutiveCount = Number(a.lastPlayedRound === roundIndex - 1) + Number(b.lastPlayedRound === roundIndex - 1)
+  const fairness = fairnessScore(state, teams, roundIndex, [teamA.id, teamB.id])
   return {
-    fairness: fairnessAfterPair(state, teams, roundIndex, teamA.category, teamA.id, teamB.id),
+    categoryGap: fairness.categoryGap,
+    fairness: fairness.withinCategory,
     repeats: repeatCount,
     consecutive: consecutiveCount,
     noise: seededNoise(seed, roundIndex, teamA.id, teamB.id),
   }
 }
 
-function fairnessAfterPair(
+function fairnessScore(
   state: WorkingState,
   teams: Team[],
   roundIndex: number,
-  category: Category,
-  teamAId: string,
-  teamBId: string,
-): number {
-  const eligible = teams.filter((team) => team.active && team.category === category && team.joinedRound <= roundIndex)
-  if (eligible.length === 0) return 0
-  const mean = (eligible.reduce((sum, team) => sum + state.get(team.id)!.scheduled, 0) + 2) / eligible.length
-  return eligible.reduce((sum, team) => {
-    const played = team.id === teamAId || team.id === teamBId ? 1 : 0
-    return sum + Math.pow(state.get(team.id)!.scheduled + played - mean, 2)
-  }, 0)
+  additionalTeamIds: string[] = [],
+): FairnessMetrics {
+  const additionalIds = new Set(additionalTeamIds)
+  const categoryAverages: number[] = []
+  let withinCategory = 0
+
+  for (const category of ['advanced', 'beginner'] as const) {
+    const eligible = teams.filter((team) => team.active && team.category === category && team.joinedRound <= roundIndex)
+    if (eligible.length === 0) continue
+    const scheduledFor = (team: Team): number => state.get(team.id)!.scheduled + Number(additionalIds.has(team.id))
+    const mean = eligible.reduce((sum, team) => sum + scheduledFor(team), 0) / eligible.length
+    categoryAverages.push(mean)
+    withinCategory += eligible.reduce((sum, team) => sum + Math.pow(scheduledFor(team) - mean, 2), 0) / eligible.length
+  }
+
+  return {
+    categoryGap: categoryAverages.length === 2 ? Math.abs(categoryAverages[0] - categoryAverages[1]) : 0,
+    withinCategory,
+  }
 }
 
 function compareScores(a: ScheduleScore, b: ScheduleScore): number {
-  return a.fairness - b.fairness
+  return a.categoryGap - b.categoryGap
+    || a.fairness - b.fairness
     || a.repeats - b.repeats
     || a.consecutive - b.consecutive
     || a.noise - b.noise
@@ -182,7 +199,7 @@ function choosePair(
       if (!best || compareScores(score, best.score) < 0) best = { teamA, teamB, score }
     }
   }
-  if (!best) return { match: null, score: { fairness: 0, repeats: 0, consecutive: 0, noise: 0 } }
+  if (!best) return { match: null, score: { categoryGap: 0, fairness: 0, repeats: 0, consecutive: 0, noise: 0 } }
   return {
     score: best.score,
     match: {
@@ -195,15 +212,6 @@ function choosePair(
       status: 'scheduled',
     },
   }
-}
-
-function fairnessScore(state: WorkingState, teams: Team[], roundIndex: number): number {
-  return (['advanced', 'beginner'] as const).reduce((total, category) => {
-    const eligible = teams.filter((team) => team.active && team.category === category && team.joinedRound <= roundIndex)
-    if (eligible.length === 0) return total
-    const mean = eligible.reduce((sum, team) => sum + state.get(team.id)!.scheduled, 0) / eligible.length
-    return total + eligible.reduce((sum, team) => sum + Math.pow(state.get(team.id)!.scheduled - mean, 2), 0)
-  }, 0)
 }
 
 function generateRoundCandidate(
@@ -237,11 +245,13 @@ function generateRoundCandidate(
   addMatch(3, 'beginner')
   if (court2Category) addMatch(2, court2Category)
 
+  const fairness = fairnessScore(nextState, teams, roundIndex)
   return {
     matches: matches.sort((a, b) => a.court - b.court),
     nextState,
     score: {
-      fairness: fairnessScore(nextState, teams, roundIndex),
+      categoryGap: fairness.categoryGap,
+      fairness: fairness.withinCategory,
       repeats,
       consecutive,
       noise,
