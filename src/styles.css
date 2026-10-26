@@ -57,8 +57,13 @@ h1 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: .04em; }
 .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 28px 0 22px; }
 .number-field { display: block; padding: 11px 12px 13px; border: 1px solid var(--line); background: var(--navy-2); }
 .number-field span, .field-label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 11px; }
-.number-field input { width: 100%; border: 0; outline: 0; color: var(--ink); background: transparent; font: 600 28px 'Noto Sans JP', sans-serif; font-variant-numeric: tabular-nums; }
-.number-field:focus-within { border-color: var(--lime); }
+.number-stepper { display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: stretch; gap: 8px; }
+.number-value { display: flex; align-items: center; color: var(--ink); font: 600 28px 'Noto Sans JP', sans-serif; font-variant-numeric: tabular-nums; }
+.number-stepper-buttons { display: grid; grid-template-rows: 1fr 1fr; gap: 4px; }
+.number-stepper-buttons button { min-height: 40px; border: 1px solid var(--line); color: var(--ink); background: var(--panel); font-size: 12px; line-height: 1; touch-action: manipulation; }
+.number-stepper-buttons button:hover:not(:disabled) { border-color: var(--lime); color: var(--lime); }
+.number-stepper-buttons button:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
+.number-stepper-buttons button:disabled { color: var(--muted-dark); opacity: .5; }
 .field-label span { color: var(--muted-dark); margin-left: 6px; font-size: 10px; }
 .text-input, select, .inline-fields input { width: 100%; border: 1px solid var(--line); outline: 0; padding: 11px 12px; color: var(--ink); background: var(--panel); border-radius: 0; font-size: 12px; }
 select { appearance: auto; }

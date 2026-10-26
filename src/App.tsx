@@ -196,7 +196,17 @@ function SetupPanel({
 }
 
 function NumberField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="number-field"><span>{label}</span><input type="number" min="0" value={value} onChange={(event) => onChange(event.target.value)} /></label>
+  const count = parseCount(value) ?? 0
+  return <div className="number-field">
+    <span>{label}</span>
+    <div className="number-stepper">
+      <strong className="number-value" aria-live="polite">{count}</strong>
+      <div className="number-stepper-buttons">
+        <button type="button" aria-label={`${label}を1増やす`} onClick={() => onChange(String(count + 1))}>▲</button>
+        <button type="button" aria-label={`${label}を1減らす`} disabled={count === 0} onClick={() => onChange(String(count - 1))}>▼</button>
+      </div>
+    </div>
+  </div>
 }
 
 function ScheduleBoard({ session }: { session: Session }) {
