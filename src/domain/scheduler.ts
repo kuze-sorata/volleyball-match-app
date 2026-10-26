@@ -330,8 +330,8 @@ function pairForCourt(matches: Match[], court: OpeningCourt): [string, string] {
 function createDefaultOpeningRound(teams: Team[]): Round {
   const pairs: Array<{ court: OpeningCourt; teamAId: string; teamBId: string; category: Category }> = [
     { court: 1, teamAId: 'advanced-1', teamBId: 'advanced-2', category: 'advanced' },
-    { court: 2, teamAId: 'beginner-c', teamBId: 'beginner-d', category: 'beginner' },
-    { court: 3, teamAId: 'beginner-a', teamBId: 'beginner-b', category: 'beginner' },
+    { court: 2, teamAId: 'beginner-a', teamBId: 'beginner-b', category: 'beginner' },
+    { court: 3, teamAId: 'beginner-c', teamBId: 'beginner-d', category: 'beginner' },
   ]
   const availableIds = new Set(teams.filter((team) => team.active && team.joinedRound <= 1).map((team) => team.id))
   return {
