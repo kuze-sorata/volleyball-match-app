@@ -9,7 +9,7 @@ import {
   TOTAL_ROUNDS,
 } from './types'
 
-export const ALGORITHM_VERSION = '公平性優先 v4'
+export const ALGORITHM_VERSION = '公平性優先 v5'
 
 interface WorkingTeam {
   scheduled: number
@@ -122,28 +122,6 @@ function seededNoise(seed: string, roundIndex: number, a: string, b: string): nu
   return (hash >>> 0) / 4294967296
 }
 
-function pairScore(
-  state: WorkingState,
-  teams: Team[],
-  roundIndex: number,
-  teamA: Team,
-  teamB: Team,
-  seed: string,
-): ScheduleScore {
-  const a = state.get(teamA.id)!
-  const b = state.get(teamB.id)!
-  const repeatCount = a.opponents.get(teamB.id) ?? 0
-  const consecutiveCount = Number(a.lastPlayedRound === roundIndex - 1) + Number(b.lastPlayedRound === roundIndex - 1)
-  const fairness = fairnessScore(state, teams, roundIndex, [teamA.id, teamB.id])
-  return {
-    categoryGap: fairness.categoryGap,
-    fairness: fairness.withinCategory,
-    repeats: repeatCount,
-    consecutive: consecutiveCount,
-    noise: seededNoise(seed, roundIndex, teamA.id, teamB.id),
-  }
-}
-
 function fairnessScore(
   state: WorkingState,
   teams: Team[],
@@ -171,8 +149,8 @@ function fairnessScore(
 
 function compareScores(a: ScheduleScore, b: ScheduleScore): number {
   return a.categoryGap - b.categoryGap
-    || a.fairness - b.fairness
     || a.repeats - b.repeats
+    || a.fairness - b.fairness
     || a.consecutive - b.consecutive
     || a.noise - b.noise
 }
@@ -181,37 +159,75 @@ function compareRoundCandidates(a: RoundCandidate, b: RoundCandidate): number {
   return b.matches.length - a.matches.length || compareScores(a.score, b.score)
 }
 
-function choosePair(
+function choosePairs(
   state: WorkingState,
   teams: Team[],
   category: Category,
   roundIndex: number,
-  usedIds: Set<string>,
+  courts: Array<1 | 2 | 3>,
   seed: string,
-): { match: Match | null; score: ScheduleScore } {
-  const eligible = teams.filter((team) => team.active && team.category === category && team.joinedRound <= roundIndex && !usedIds.has(team.id))
-  let best: { teamA: Team; teamB: Team; score: ScheduleScore } | null = null
+): { matches: Match[]; nextState: WorkingState; score: ScheduleScore } {
+  const eligible = teams.filter((team) => team.active && team.category === category && team.joinedRound <= roundIndex)
+  const pairs: Array<[Team, Team]> = []
   for (let aIndex = 0; aIndex < eligible.length; aIndex += 1) {
     for (let bIndex = aIndex + 1; bIndex < eligible.length; bIndex += 1) {
-      const teamA = eligible[aIndex]
-      const teamB = eligible[bIndex]
-      const score = pairScore(state, teams, roundIndex, teamA, teamB, seed)
-      if (!best || compareScores(score, best.score) < 0) best = { teamA, teamB, score }
+      pairs.push([eligible[aIndex], eligible[bIndex]])
     }
   }
-  if (!best) return { match: null, score: { categoryGap: 0, fairness: 0, repeats: 0, consecutive: 0, noise: 0 } }
-  return {
-    score: best.score,
-    match: {
-      id: `round-${roundIndex}-court-pending-${best.teamA.id}-${best.teamB.id}`,
-      roundIndex,
-      court: 1,
-      category,
-      teamAId: best.teamA.id,
-      teamBId: best.teamB.id,
-      status: 'scheduled',
-    },
+
+  const emptyScore: ScheduleScore = { categoryGap: 0, fairness: 0, repeats: 0, consecutive: 0, noise: 0 }
+  const maxMatches = Math.min(courts.length, Math.floor(eligible.length / 2))
+  for (let matchCount = maxMatches; matchCount > 0; matchCount -= 1) {
+    let best: { matches: Match[]; nextState: WorkingState; score: ScheduleScore } | null = null
+    const combinations: Array<Array<[Team, Team]>> = []
+
+    if (matchCount === 1) {
+      for (const pair of pairs) combinations.push([pair])
+    } else {
+      for (let firstIndex = 0; firstIndex < pairs.length; firstIndex += 1) {
+        for (let secondIndex = firstIndex + 1; secondIndex < pairs.length; secondIndex += 1) {
+          const first = pairs[firstIndex]
+          const second = pairs[secondIndex]
+          if (first.some((team) => second.some((other) => other.id === team.id))) continue
+          combinations.push([first, second])
+        }
+      }
+    }
+
+    for (const combination of combinations) {
+      const matches: Match[] = combination.map(([teamA, teamB], index) => ({
+        id: `round-${roundIndex}-court-${courts[index]}`,
+        roundIndex,
+        court: courts[index],
+        category,
+        teamAId: teamA.id,
+        teamBId: teamB.id,
+        status: 'scheduled',
+      }))
+      const nextState = cloneState(state)
+      for (const match of matches) applyMatch(nextState, match)
+
+      const score: ScheduleScore = {
+        categoryGap: 0,
+        fairness: fairnessScore(nextState, teams, roundIndex).withinCategory,
+        repeats: matches.reduce((sum, match) => sum + (state.get(match.teamAId)?.opponents.get(match.teamBId) ?? 0), 0),
+        consecutive: matches.reduce((sum, match) => {
+          const a = state.get(match.teamAId)?.lastPlayedRound ?? 0
+          const b = state.get(match.teamBId)?.lastPlayedRound ?? 0
+          return sum + Number(a === roundIndex - 1) + Number(b === roundIndex - 1)
+        }, 0),
+        noise: matches.reduce((sum, match) => sum + seededNoise(seed, roundIndex, match.teamAId, match.teamBId), 0),
+      }
+      if (!best || score.repeats < best.score.repeats
+        || (score.repeats === best.score.repeats && compareScores(score, best.score) < 0)) {
+        best = { matches, nextState, score }
+      }
+    }
+
+    if (best) return best
   }
+
+  return { matches: [], nextState: cloneState(state), score: emptyScore }
 }
 
 function generateRoundCandidate(
@@ -221,41 +237,31 @@ function generateRoundCandidate(
   court2Category: Category | null,
   seed: string,
 ): RoundCandidate {
+  const advanced = choosePairs(state, teams, 'advanced', roundIndex,
+    court2Category === 'advanced' ? [1, 2] : [1], seed)
+  const beginner = choosePairs(state, teams, 'beginner', roundIndex,
+    court2Category === 'beginner' ? [2, 3] : [3], seed)
+  const matches = [...advanced.matches, ...beginner.matches].sort((a, b) => a.court - b.court)
   const nextState = cloneState(state)
-  const usedIds = new Set<string>()
-  const matches: Match[] = []
-  let repeats = 0
-  let consecutive = 0
-  let noise = 0
-
-  const addMatch = (court: 1 | 2 | 3, category: Category): void => {
-    const result = choosePair(nextState, teams, category, roundIndex, usedIds, seed)
-    if (!result.match) return
-    const match = { ...result.match, id: `round-${roundIndex}-court-${court}`, court }
-    matches.push(match)
-    usedIds.add(match.teamAId)
-    usedIds.add(match.teamBId)
-    applyMatch(nextState, match)
-    repeats += result.score.repeats
-    consecutive += result.score.consecutive
-    noise += result.score.noise
-  }
-
-  addMatch(1, 'advanced')
-  addMatch(3, 'beginner')
-  if (court2Category) addMatch(2, court2Category)
+  for (const match of matches) applyMatch(nextState, match)
 
   const fairness = fairnessScore(nextState, teams, roundIndex)
-  return {
-    matches: matches.sort((a, b) => a.court - b.court),
-    nextState,
-    score: {
+  const score = matches.reduce((total, match) => {
+    const previousCount = state.get(match.teamAId)?.opponents.get(match.teamBId) ?? 0
+    const aLastRound = state.get(match.teamAId)?.lastPlayedRound ?? 0
+    const bLastRound = state.get(match.teamBId)?.lastPlayedRound ?? 0
+    return {
       categoryGap: fairness.categoryGap,
       fairness: fairness.withinCategory,
-      repeats,
-      consecutive,
-      noise,
-    },
+      repeats: total.repeats + previousCount,
+      consecutive: total.consecutive + Number(aLastRound === roundIndex - 1) + Number(bLastRound === roundIndex - 1),
+      noise: total.noise + seededNoise(seed, roundIndex, match.teamAId, match.teamBId),
+    }
+  }, { categoryGap: fairness.categoryGap, fairness: fairness.withinCategory, repeats: 0, consecutive: 0, noise: 0 })
+  return {
+    matches,
+    nextState,
+    score,
   }
 }
 
@@ -272,9 +278,13 @@ function generateFutureRounds(
 
   const rounds = [...baseRounds]
   for (let roundIndex = startRound; roundIndex <= TOTAL_ROUNDS; roundIndex += 1) {
-    const advanced = generateRoundCandidate(state, teams, roundIndex, 'advanced', seed)
+    const previousRound = rounds[roundIndex - 2]
+    const previousAdvancedMatches = previousRound?.matches.filter((match) => match.category === 'advanced').length ?? 0
+    const advanced = previousAdvancedMatches >= 2
+      ? null
+      : generateRoundCandidate(state, teams, roundIndex, 'advanced', seed)
     const beginner = generateRoundCandidate(state, teams, roundIndex, 'beginner', seed)
-    const candidate = compareRoundCandidates(advanced, beginner) <= 0 ? advanced : beginner
+    const candidate = advanced && compareRoundCandidates(advanced, beginner) <= 0 ? advanced : beginner
     rounds[roundIndex - 1] = {
       index: roundIndex,
       status: 'planned',
