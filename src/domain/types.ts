@@ -9,6 +9,8 @@ export interface Team {
   id: string
   category: Category
   displayName: string
+  playerCount?: number
+  representativeName?: string
   joinedRound: number
   active: boolean
 }
@@ -49,6 +51,7 @@ export interface Session {
   algorithmVersion: string
   seed: string
   teams: Team[]
+  attendanceCounts?: Partial<Record<Category, number>>
   rounds: Round[]
   court2Overrides: Record<string, Court2Mode>
   revisions: Revision[]
