@@ -49,7 +49,6 @@ export interface Session {
   algorithmVersion: string
   seed: string
   teams: Team[]
-  attendanceCounts?: Partial<Record<Category, number>>
   rounds: Round[]
   court2Overrides: Record<string, Court2Mode>
   revisions: Revision[]
