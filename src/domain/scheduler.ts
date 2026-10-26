@@ -9,7 +9,7 @@ import {
   TOTAL_ROUNDS,
 } from './types'
 
-export const ALGORITHM_VERSION = '公平性優先 v1'
+export const ALGORITHM_VERSION = '公平性優先 v2'
 
 interface WorkingTeam {
   scheduled: number
@@ -103,15 +103,6 @@ function seededNoise(seed: string, roundIndex: number, a: string, b: string): nu
   return (hash >>> 0) / 4294967296
 }
 
-function openingPairPreference(roundIndex: number, teamA: Team, teamB: Team): number {
-  if (roundIndex !== 1) return 0
-  const preferredPair = teamA.category === 'advanced'
-    ? new Set(['1', '2'])
-    : new Set(['A', 'B'])
-  const isPreferredPair = preferredPair.has(teamA.displayName) && preferredPair.has(teamB.displayName)
-  return isPreferredPair ? -1000 : 0
-}
-
 function pairScore(
   state: WorkingState,
   roundIndex: number,
@@ -125,8 +116,7 @@ function pairScore(
   const consecutivePenalty = (a.lastPlayedRound === roundIndex - 1 ? 12 : 0) + (b.lastPlayedRound === roundIndex - 1 ? 12 : 0)
   const loadPenalty = (a.scheduled + b.scheduled) * 7
   const imbalancePenalty = Math.abs(a.scheduled - b.scheduled) * 2
-  const openingPreference = openingPairPreference(roundIndex, teamA, teamB)
-  return openingPreference + repeatCount * 80 + consecutivePenalty + loadPenalty + imbalancePenalty + seededNoise(seed, roundIndex, teamA.id, teamB.id)
+  return repeatCount * 80 + consecutivePenalty + loadPenalty + imbalancePenalty + seededNoise(seed, roundIndex, teamA.id, teamB.id)
 }
 
 function choosePair(
@@ -241,7 +231,9 @@ export function createInitialSession(advancedCount: number, beginnerCount: numbe
     status: 'planned' as const,
     matches: [],
   }))
-  const rounds = generateFutureRounds(teams, emptyRounds, seed, 1)
+  const openingRound = createDefaultOpeningRound(teams)
+  const baseRounds = emptyRounds.map((round) => round.index === 1 ? openingRound : round)
+  const rounds = generateFutureRounds(teams, baseRounds, seed, 2)
   const now = new Date().toISOString()
   return {
     version: 1,
@@ -260,6 +252,105 @@ export function createInitialSession(advancedCount: number, beginnerCount: numbe
   }
 }
 
+type OpeningCourt = 1 | 2 | 3
+export type OpeningRoundDraft = Record<OpeningCourt, [string, string]>
+
+export function openingRoundDraft(session: Session): OpeningRoundDraft {
+  const round = session.rounds.find((candidate) => candidate.index === 1)
+  const expectedCategories: Record<OpeningCourt, Category> = {
+    1: 'advanced',
+    2: 'beginner',
+    3: 'beginner',
+  }
+  const validMatches = (round?.matches ?? []).filter((match) => match.category === expectedCategories[match.court])
+  return {
+    1: pairForCourt(validMatches, 1),
+    2: pairForCourt(validMatches, 2),
+    3: pairForCourt(validMatches, 3),
+  }
+}
+
+function pairForCourt(matches: Match[], court: OpeningCourt): [string, string] {
+  const match = matches.find((candidate) => candidate.court === court)
+  return match ? [match.teamAId, match.teamBId] : ['', '']
+}
+
+function createDefaultOpeningRound(teams: Team[]): Round {
+  const pairs: Array<{ court: OpeningCourt; teamAId: string; teamBId: string; category: Category }> = [
+    { court: 1, teamAId: 'advanced-1', teamBId: 'advanced-2', category: 'advanced' },
+    { court: 2, teamAId: 'beginner-c', teamBId: 'beginner-d', category: 'beginner' },
+    { court: 3, teamAId: 'beginner-a', teamBId: 'beginner-b', category: 'beginner' },
+  ]
+  const availableIds = new Set(teams.filter((team) => team.active && team.joinedRound <= 1).map((team) => team.id))
+  return {
+    index: 1,
+    status: 'planned',
+    matches: pairs.filter((pair) => availableIds.has(pair.teamAId) && availableIds.has(pair.teamBId)).map((pair) => ({
+      id: `round-1-court-${pair.court}`,
+      roundIndex: 1,
+      court: pair.court,
+      category: pair.category,
+      teamAId: pair.teamAId,
+      teamBId: pair.teamBId,
+      status: 'scheduled',
+    })),
+  }
+}
+
+export function recalculateFromOpeningRound(
+  session: Session,
+  draft: OpeningRoundDraft,
+): { session: Session; diff: PlanDiff } {
+  const openingRound = session.rounds.find((round) => round.index === 1)
+  if (session.currentRound !== 1 || openingRound?.status !== 'planned') {
+    throw new Error('第1ラウンドを組み直せるのは、終了前だけです。')
+  }
+
+  const expectedCategories: Record<OpeningCourt, Category> = {
+    1: 'advanced',
+    2: 'beginner',
+    3: 'beginner',
+  }
+  const usedIds = new Set<string>()
+  const matches: Match[] = []
+  for (const court of [1, 2, 3] as const) {
+    const [teamAId, teamBId] = draft[court]
+    if (!teamAId && !teamBId) continue
+    if (!teamAId || !teamBId) throw new Error(`コート${court}はチームを2つ選んでください。`)
+    if (teamAId === teamBId) throw new Error(`コート${court}で同じチームは選べません。`)
+
+    for (const teamId of [teamAId, teamBId]) {
+      const team = session.teams.find((candidate) => candidate.id === teamId)
+      if (!team || !team.active || team.joinedRound > 1 || team.category !== expectedCategories[court]) {
+        throw new Error(`コート${court}のカテゴリーに合うチームを選んでください。`)
+      }
+      if (usedIds.has(teamId)) throw new Error('同じチームを第1ラウンドの複数の試合に入れることはできません。')
+      usedIds.add(teamId)
+    }
+
+    matches.push({
+      id: `round-1-court-${court}`,
+      roundIndex: 1,
+      court,
+      category: expectedCategories[court],
+      teamAId,
+      teamBId,
+      status: 'scheduled',
+    })
+  }
+
+  const baseRounds = session.rounds.map((round) => round.index === 1
+    ? { ...round, status: 'planned' as const, matches }
+    : { ...round, matches: round.matches.map((match) => ({ ...match })) })
+  const rounds = generateFutureRounds(session.teams, baseRounds, session.seed, 2)
+  rounds[0] = { ...baseRounds[0]!, matches }
+  const diff = diffPlans(session.rounds, rounds, 2)
+  return {
+    session: { ...session, rounds, algorithmVersion: ALGORITHM_VERSION, updatedAt: new Date().toISOString() },
+    diff,
+  }
+}
+
 export function lockedThroughRound(session: Session): number {
   return session.rounds.filter((round) => round.status === 'completed' || round.status === 'in_progress').reduce((max, round) => Math.max(max, round.index), 0)
 }
@@ -273,14 +364,16 @@ export function recalculateSessionPlan(
   const addedTeams = addedCategory && addedCount > 0 ? createTeamsForAddition(session.teams, addedCategory, addedCount, lockThrough + 1) : []
   const teams = [...session.teams, ...addedTeams]
   const preservedRounds = session.rounds.map((round) => ({ ...round, matches: round.matches.map((match) => ({ ...match })) }))
-  const nextRounds = generateFutureRounds(teams, preservedRounds, session.seed, lockThrough + 1)
+  const startRound = lockThrough === 0 ? 2 : lockThrough + 1
+  const nextRounds = generateFutureRounds(teams, preservedRounds, session.seed, startRound)
   for (let index = 0; index < lockThrough; index += 1) nextRounds[index] = preservedRounds[index]
-  const diff = diffPlans(session.rounds, nextRounds, lockThrough + 1)
+  const diff = diffPlans(session.rounds, nextRounds, startRound)
   const nextSession: Session = {
     ...session,
     teams,
     rounds: nextRounds,
     court2Overrides: {},
+    algorithmVersion: ALGORITHM_VERSION,
     updatedAt: new Date().toISOString(),
   }
   return { session: nextSession, diff }

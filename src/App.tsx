@@ -6,11 +6,14 @@ import {
   diffPlans,
   getTeamById,
   getTeamStats,
+  openingRoundDraft,
+  recalculateFromOpeningRound,
   recalculateSessionPlan,
   undoLastCompletedRound,
 } from './domain/scheduler'
 import { clearSession, loadSessionResult, saveSession } from './domain/storage'
 import { Category, Match, PlanDiff, Round, Session } from './domain/types'
+import type { OpeningRoundDraft } from './domain/scheduler'
 import logoImage from './assets/jmv-logo.png'
 
 const DEFAULT_SEED = '20261011'
@@ -22,7 +25,7 @@ function App() {
   const [beginnerCount, setBeginnerCount] = useState('5')
   const [addCategory, setAddCategory] = useState<Category>('advanced')
   const [addCount, setAddCount] = useState('1')
-  const [preview, setPreview] = useState<{ nextSession: Session; diff: PlanDiff } | null>(null)
+  const [preview, setPreview] = useState<{ nextSession: Session; diff: PlanDiff; reason: '途中参加' | '第1ラウンド調整' } | null>(null)
   const [notice, setNotice] = useState<{ type: 'success' | 'warning'; text: string } | null>(() => initialStorage.warning ? { type: 'warning', text: initialStorage.warning } : null)
 
   useEffect(() => {
@@ -52,6 +55,7 @@ function App() {
   const handleComplete = () => {
     if (!session || !currentRound || currentRound.status === 'completed') return
     setSession(completeCurrentRound(session))
+    setPreview(null)
     flash(`第${currentRound.index}ラウンドを終了しました。`)
   }
 
@@ -69,8 +73,18 @@ function App() {
       return
     }
     const result = recalculateSessionPlan(session, count === 0 ? null : addCategory, count)
-    setPreview({ nextSession: result.session, diff: result.diff })
+    setPreview({ nextSession: result.session, diff: result.diff, reason: '途中参加' })
     if (result.diff.changes.length === 0 && count === 0) flash('変更はありません。', 'warning')
+  }
+
+  const handleOpeningPreview = (draft: OpeningRoundDraft) => {
+    if (!session) return
+    try {
+      const result = recalculateFromOpeningRound(session, draft)
+      setPreview({ nextSession: result.session, diff: result.diff, reason: '第1ラウンド調整' })
+    } catch (error) {
+      flash(error instanceof Error ? error.message : '第1ラウンドを組み直せませんでした。', 'warning')
+    }
   }
 
   const handleApplyPreview = () => {
@@ -80,14 +94,16 @@ function App() {
       revisions: [...preview.nextSession.revisions, {
         id: `revision-${Date.now()}`,
         createdAt: new Date().toISOString(),
-        reason: '途中参加',
+        reason: preview.reason,
         previousPlan: session?.rounds ?? [],
         nextPlan: preview.nextSession.rounds,
         confirmed: true,
       }],
     })
     setPreview(null)
-    flash('変更を確定しました。未開始ラウンドだけ更新されています。')
+    flash(preview.reason === '第1ラウンド調整'
+      ? '第1ラウンドを固定し、第2ラウンド以降を更新しました。'
+      : '変更を確定しました。未開始ラウンドだけ更新されています。')
   }
 
   const handleReset = () => {
@@ -130,6 +146,11 @@ function App() {
               <TeamSummary stats={stats} />
             </div>
             <aside className="side-column">
+              {currentRound?.index === 1 && currentRound.status === 'planned' && <OpeningRoundEditor
+                key={`${session.id}-${session.rounds[0]?.status}-${session.rounds[0]?.matches.map((match) => `${match.court}:${match.teamAId}:${match.teamBId}`).join('|')}`}
+                session={session}
+                onPreview={handleOpeningPreview}
+              />}
               <ProgressPanel session={session} currentRound={currentRound} onComplete={handleComplete} onUndo={handleUndo} />
               <ChangePanel
                 addCategory={addCategory}
@@ -182,9 +203,54 @@ function ScheduleBoard({ session }: { session: Session }) {
   return <section className="panel schedule-panel">
     <div className="board-header section-heading"><div><h3>対戦表</h3></div></div>
     <div className="schedule-scroll">
-      <div className="schedule-head"><div>ラウンド</div><div>コート 1 <span>ADVANCE</span></div><div>コート 2 <span>可変</span></div><div>コート 3 <span>BEGINNER</span></div></div>
+      <div className="schedule-head"><div>ラウンド</div><div>コート 1 <span>ADVANCE</span></div><div>コート 2 <span>第1Rはビギナー／以降は自動</span></div><div>コート 3 <span>BEGINNER</span></div></div>
       {session.rounds.map((round) => <RoundRow key={round.index} round={round} session={session} />)}
     </div>
+  </section>
+}
+
+function OpeningRoundEditor({ session, onPreview }: { session: Session; onPreview: (draft: OpeningRoundDraft) => void }) {
+  const [draft, setDraft] = useState(() => openingRoundDraft(session))
+  const openingRound = session.rounds.find((round) => round.index === 1)
+  const canEdit = session.currentRound === 1 && openingRound?.status === 'planned'
+  const selectedIds = Object.values(draft).flat()
+
+  const updateTeam = (court: 1 | 2 | 3, side: 0 | 1, teamId: string) => {
+    setDraft((current) => {
+      const pair: [string, string] = [...current[court]]
+      pair[side] = teamId
+      return { ...current, [court]: pair }
+    })
+  }
+
+  return <section className="panel opening-panel">
+    <div className="section-heading"><div><h3>第1ラウンドを調整する</h3><p>実際の対戦カードに合わせて、第2ラウンド以降を組み直せます。</p></div></div>
+    <p className="microcopy opening-help">コート1はアドバンス、コート2・3はビギナーです。両方を「選択しない」にすると試合なしになります。</p>
+    {([1, 2, 3] as const).map((court) => {
+      const category: Category = court === 1 ? 'advanced' : 'beginner'
+      const candidates = session.teams.filter((team) => team.active && team.joinedRound <= 1 && team.category === category)
+      return <div className="opening-court" key={court}>
+        <strong>コート{court}<span>{categoryLabelJa(category)}</span></strong>
+        <div className="opening-pair">
+          {([0, 1] as const).map((side) => {
+            const ownTeamId = draft[court][side]
+            const reservedElsewhere = new Set(selectedIds.filter((id) => id && id !== ownTeamId))
+            return <select
+              key={side}
+              aria-label={`第1ラウンド コート${court}の${side === 0 ? 'チームA' : 'チームB'}`}
+              value={ownTeamId}
+              disabled={!canEdit}
+              onChange={(event) => updateTeam(court, side, event.target.value)}
+            >
+              <option value="">選択しない</option>
+              {candidates.map((team) => <option key={team.id} value={team.id} disabled={reservedElsewhere.has(team.id)}>{team.displayName}</option>)}
+            </select>
+          })}
+        </div>
+      </div>
+    })}
+    <button className="primary-button" type="button" disabled={!canEdit} onClick={() => onPreview(draft)}>この組み合わせで後半を組み直す <span>→</span></button>
+    {!canEdit && <p className="microcopy">第1ラウンド終了前に変更できます。</p>}
   </section>
 }
 
@@ -241,9 +307,14 @@ function ChangePanel({
   </section>
 }
 
-function PreviewPanel({ session, preview, onApply, onCancel }: { session: Session; preview: { nextSession: Session; diff: PlanDiff }; onApply: () => void; onCancel: () => void }) {
+function PreviewPanel({ session, preview, onApply, onCancel }: { session: Session; preview: { nextSession: Session; diff: PlanDiff; reason: '途中参加' | '第1ラウンド調整' }; onApply: () => void; onCancel: () => void }) {
+  const isOpeningAdjustment = preview.reason === '第1ラウンド調整'
   return <section className="panel preview-panel">
-    <div className="section-heading"><div><h3>差分プレビュー</h3><p>{preview.diff.changedRounds.length}ラウンド・{preview.diff.changes.length}コートが変更</p></div></div>
+    <div className="section-heading"><div><h3>{isOpeningAdjustment ? '第1ラウンド調整の確認' : '差分プレビュー'}</h3><p>{isOpeningAdjustment ? `第1ラウンドを固定します。第2〜9ラウンドは${preview.diff.changedRounds.length}ラウンド・${preview.diff.changes.length}コートを変更` : `${preview.diff.changedRounds.length}ラウンド・${preview.diff.changes.length}コートが変更`}</p></div></div>
+    {isOpeningAdjustment && <div className="opening-summary"><strong>固定する第1ラウンド</strong>{([1, 2, 3] as const).map((court) => {
+      const match = preview.nextSession.rounds[0]?.matches.find((candidate) => candidate.court === court) ?? null
+      return <div key={court}><span>コート{court}</span><b>{shortMatch(match, preview.nextSession)}</b></div>
+    })}</div>}
     <div className="preview-list">{preview.diff.changes.length === 0 ? <p className="empty-line">対戦カードの変更はありません。</p> : preview.diff.changes.slice(0, 8).map((change) => <div className="preview-row" key={`${change.roundIndex}-${change.court}`}><span>第{change.roundIndex}R / C{change.court}</span><strong>{shortMatch(change.before, session)} <b>→</b> {shortMatch(change.after, preview.nextSession)}</strong></div>)}{preview.diff.changes.length > 8 && <p className="microcopy">ほか {preview.diff.changes.length - 8} 件。全9ラウンド表に反映されます。</p>}</div>
     <div className="preview-actions"><button className="primary-button" type="button" onClick={onApply}>この変更を確定 <span>→</span></button><button className="secondary-button" type="button" onClick={onCancel}>キャンセル</button></div>
   </section>
