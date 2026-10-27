@@ -9,7 +9,7 @@ import {
   TOTAL_ROUNDS,
 } from './types'
 
-export const ALGORITHM_VERSION = '公平性優先 v5'
+export const ALGORITHM_VERSION = '公平性優先 v6'
 
 interface WorkingTeam {
   scheduled: number
@@ -148,8 +148,8 @@ function fairnessScore(
 }
 
 function compareScores(a: ScheduleScore, b: ScheduleScore): number {
-  return a.categoryGap - b.categoryGap
-    || a.repeats - b.repeats
+  return a.repeats - b.repeats
+    || a.categoryGap - b.categoryGap
     || a.fairness - b.fairness
     || a.consecutive - b.consecutive
     || a.noise - b.noise
